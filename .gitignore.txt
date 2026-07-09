@@ -1,0 +1,27 @@
+# Build output
+Debug/
+Release/
+
+# STM32CubeIDE workspace
+.metadata/
+
+# IDE settings (개인 설정)
+.settings/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.o
+*.d
+*.su
+*.map
+*.lst
+*.log
+*.tmp
+*.bak
+*~
+
+# Debug launch files
+*.launch

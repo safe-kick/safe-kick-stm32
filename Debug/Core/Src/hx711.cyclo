@@ -1,7 +1,0 @@
-../Core/Src/hx711.c:3:13:HX711_Delay	2
-../Core/Src/hx711.c:8:9:HX711_IsReady	1
-../Core/Src/hx711.c:16:9:HX711_Read	5
-../Core/Src/hx711.c:67:9:HX711_ReadAverage	2
-../Core/Src/hx711.c:80:6:HX711_Tare	1
-../Core/Src/hx711.c:87:9:HX711_GetValue	1
-../Core/Src/hx711.c:94:7:HX711_GetKg	1

@@ -63,8 +63,10 @@ void Error_Handler(void);
 #define USART_TX_GPIO_Port GPIOA
 #define USART_RX_Pin GPIO_PIN_3
 #define USART_RX_GPIO_Port GPIOA
-#define MQ3_ADC_Pin GPIO_PIN_1
-#define MQ3_ADC_GPIO_Port GPIOA
+#define BUZZER_Pin GPIO_PIN_6
+#define BUZZER_GPIO_Port GPIOA
+#define RELAY_Pin GPIO_PIN_7
+#define RELAY_GPIO_Port GPIOA
 #define HX1_DT_Pin GPIO_PIN_0
 #define HX1_DT_GPIO_Port GPIOB
 #define HX1_SCK_Pin GPIO_PIN_1

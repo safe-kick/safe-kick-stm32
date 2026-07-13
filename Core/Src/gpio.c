@@ -51,6 +51,9 @@ void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOA, BUZZER_Pin|RELAY_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, HX1_SCK_Pin|HX2_SCK_Pin|HX3_SCK_Pin|HX4_SCK_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : B1_Pin */
@@ -59,17 +62,18 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
 
+  /*Configure GPIO pins : BUZZER_Pin RELAY_Pin */
+  GPIO_InitStruct.Pin = BUZZER_Pin|RELAY_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
   /*Configure GPIO pins : HX1_DT_Pin HX2_DT_Pin HX3_DT_Pin HX4_DT_Pin */
   GPIO_InitStruct.Pin = HX1_DT_Pin|HX2_DT_Pin|HX3_DT_Pin|HX4_DT_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : MQ3_ADC_Pin */
-  GPIO_InitStruct.Pin = MQ3_ADC_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(MQ3_ADC_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : HX1_SCK_Pin HX2_SCK_Pin HX3_SCK_Pin HX4_SCK_Pin */
   GPIO_InitStruct.Pin = HX1_SCK_Pin|HX2_SCK_Pin|HX3_SCK_Pin|HX4_SCK_Pin;

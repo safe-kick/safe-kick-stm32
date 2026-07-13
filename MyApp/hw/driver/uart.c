@@ -8,8 +8,8 @@ extern UART_HandleTypeDef huart2;
 #define UART_RX_BUF_LENGTH 256
 
 static uint8_t rx_buf[UART_RX_BUF_LENGTH];
-static uint32_t rx_buf_head =0;
-static uint32_t rx_buf_tail=0;
+static volatile uint32_t rx_buf_head =0;
+static volatile uint32_t rx_buf_tail=0;
 static uint8_t rx_data;
 
 

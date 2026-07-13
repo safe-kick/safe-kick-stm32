@@ -1,14 +1,16 @@
 #include "ap.h"
 #include "bsp.h"
+#include "buzzer.h"
 #include "mq3.h"
+#include "relay.h"
 #include "uart.h"
 
 #include <string.h>
 
-static HX711_t hx1 = {GPIOB, GPIO_PIN_0,  GPIOB, GPIO_PIN_1,  0, 85350.0f};
-static HX711_t hx2 = {GPIOB, GPIO_PIN_2,  GPIOB, GPIO_PIN_10, 0, 78960.0f};
-static HX711_t hx3 = {GPIOB, GPIO_PIN_12, GPIOB, GPIO_PIN_13, 0, 84640.0f};
-static HX711_t hx4 = {GPIOB, GPIO_PIN_14, GPIOB, GPIO_PIN_15, 0, 87680.0f};
+static HX711_t hx1 = {GPIOB, GPIO_PIN_0,  GPIOB, GPIO_PIN_1,  0, 83387.0f};
+static HX711_t hx2 = {GPIOB, GPIO_PIN_2,  GPIOB, GPIO_PIN_10, 0, 77144.0f};
+static HX711_t hx3 = {GPIOB, GPIO_PIN_12, GPIOB, GPIO_PIN_13, 0, 82693.0f};
+static HX711_t hx4 = {GPIOB, GPIO_PIN_14, GPIOB, GPIO_PIN_15, 0, 85663.0f};
 
 static char rx_cmd[64];
 static uint32_t rx_cmd_len = 0;
@@ -17,6 +19,9 @@ static uint8_t weight_stream_active = 0;
 static uint32_t weight_last_sample_time = 0;
 static uint8_t mq3_stream_active = 0;
 static uint32_t mq3_last_sample_time = 0;
+
+#define WEIGHT_SAMPLE_COUNT       1U
+#define WEIGHT_STREAM_INTERVAL_MS 1000U
 
 static void echo_rx_char(char ch)
 {
@@ -58,16 +63,30 @@ static void trim_rx_cmd(char *cmd)
 
 static void send_weight_response(void)
 {
-    const uint8_t times = 10;
-    float fl = HX711_GetKg(&hx1, times);
-    float fr = HX711_GetKg(&hx2, times);
-    float rl = HX711_GetKg(&hx3, times);
-    float rr = HX711_GetKg(&hx4, times);
+    float fl = HX711_GetKg(&hx1, WEIGHT_SAMPLE_COUNT);
+    float fr = HX711_GetKg(&hx2, WEIGHT_SAMPLE_COUNT);
+    float rl = HX711_GetKg(&hx3, WEIGHT_SAMPLE_COUNT);
+    float rr = HX711_GetKg(&hx4, WEIGHT_SAMPLE_COUNT);
     float total = fl + fr + rl + rr;
 
     uartPrintf(0,
                "FL:%.2f FR:%.2f RL:%.2f RR:%.2f TOTAL:%.2f\r\n",
                fl, fr, rl, rr, total);
+}
+
+static void start_weight_stream(void)
+{
+    uartPrintf(0, "[CHECK_WEIGHT]\r\n");
+    weight_stream_active = 1;
+    weight_last_sample_time = HAL_GetTick();
+}
+
+static void stop_weight_stream(void)
+{
+    if (weight_stream_active) {
+        weight_stream_active = 0;
+        uartPrintf(0, "[END_WEIGHT]\r\n");
+    }
 }
 
 static void send_mq3_response(void)
@@ -94,8 +113,10 @@ static void send_mq3_baseline(void)
 
 static void send_mq3_session(void)
 {
+    uartPrintf(0, "[CHECK_MQ3]\r\n");
     send_mq3_baseline();
     send_mq3_measurements(8);
+    uartPrintf(0, "[END_MQ3]\r\n");
 }
 
 static void start_mq3_stream(void)
@@ -129,17 +150,37 @@ static void process_command(const char *cmd)
     }
 
     if (strcmp(cmd, "CHECK_WEIGHT") == 0) {
-        weight_stream_active = 1;
-        weight_last_sample_time = 0;
-        send_weight_response();
-        weight_last_sample_time = HAL_GetTick();
-        uartPrintf(0, "WEIGHT_STREAM_ON\r\n");
+        start_weight_stream();
         return;
     }
 
     if (strcmp(cmd, "STOP_WEIGHT") == 0) {
-        weight_stream_active = 0;
+        stop_weight_stream();
         uartPrintf(0, "WEIGHT_STREAM_OFF\r\n");
+        return;
+    }
+
+    if (strcmp(cmd, "LOCK") == 0) {
+        buzzerStop();
+        relayOff();
+        stop_weight_stream();
+        uartPrintf(0, "LOCK_OK\r\n");
+        return;
+    }
+
+    if (strcmp(cmd, "UNLOCK") == 0) {
+        relayOn();
+        uartPrintf(0, "UNLOCK_OK\r\n");
+        return;
+    }
+
+    if (strcmp(cmd, "BUZZ_ON") == 0) {
+        buzzerStart();
+        return;
+    }
+
+    if (strcmp(cmd, "BUZZ_OFF") == 0) {
+        buzzerStop();
         return;
     }
 
@@ -151,6 +192,8 @@ static void process_command(const char *cmd)
 void apMain(void)
 {
     uartInit();
+    relayInit();
+    buzzerInit();
 
     uartPrintf(0, "Tare...\r\n");
     HX711_Tare(&hx1, 10);
@@ -162,12 +205,15 @@ void apMain(void)
     while (1) {
         uint32_t now = HAL_GetTick();
 
+        buzzerUpdate();
+
         if (mq3_stream_active && (now - mq3_last_sample_time >= 500U)) {
             mq3_last_sample_time = now;
             send_mq3_response();
         }
 
-        if (weight_stream_active && (now - weight_last_sample_time >= 1000U)) {
+        if (weight_stream_active &&
+            (now - weight_last_sample_time >= WEIGHT_STREAM_INTERVAL_MS)) {
             weight_last_sample_time = now;
             send_weight_response();
         }
@@ -185,7 +231,6 @@ void apMain(void)
                 trim_rx_cmd(rx_cmd);
 
                 if (rx_cmd[0] != '\0') {
-                    uartPrintf(0, "[CMD:%s]\r\n", rx_cmd);
                     process_command(rx_cmd);
                 }
 

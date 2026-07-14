@@ -2,6 +2,12 @@
 #include "adc.h"
 #include "bsp.h"
 
+/*
+ * 함수 정리:
+ * - mq3Init(): MQ-3 센서 초기화
+ * - mq3ReadOnce(): ADC 1회 측정
+ * - mq3ReadAverage(): 여러 번 측정 후 평균값 반환
+ */
 void mq3Init(void)
 {
     /* ADC1 is initialized in MX_ADC1_Init(). */

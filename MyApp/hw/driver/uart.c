@@ -1,9 +1,15 @@
 #include "uart.h"
 
-
-
-
-
+/*
+ * 함수 정리:
+ * - uartInit(): UART 수신 인터럽트 시작
+ * - HAL_UART_RxCpltCallback(): 수신 데이터 버퍼 저장
+ * - uartAvailable(): 읽을 수 있는 데이터 개수 확인
+ * - uartOpen(): UART 포트 오픈 처리
+ * - uartWrite(): UART 송신
+ * - uartPrintf(): printf 스타일 송신
+ * - uartRead(): 1바이트 읽기
+ */
 extern UART_HandleTypeDef huart2;
 #define UART_RX_BUF_LENGTH 256
 

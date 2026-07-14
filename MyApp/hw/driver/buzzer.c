@@ -1,5 +1,13 @@
 #include "buzzer.h"
 
+/*
+ * 함수 정리:
+ * - buzzerInit(): 부저 초기화
+ * - buzzerStart(): 부저 동작 시작
+ * - buzzerStop(): 부저 정지
+ * - buzzerUpdate(): 주기적으로 ON/OFF 토글
+ * - buzzerIsActive(): 부저 활성 상태 확인
+ */
 #define BUZZER_ON_STATE       GPIO_PIN_SET
 #define BUZZER_OFF_STATE      GPIO_PIN_RESET
 #define BUZZER_TOGGLE_TIME_MS 1000U

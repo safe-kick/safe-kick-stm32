@@ -7,6 +7,19 @@
 
 #include <string.h>
 
+/*
+ * 함수 정리:
+ * - echo_rx_char(): UART 입력 echo
+ * - append_rx_char(): 명령 문자열 누적
+ * - trim_rx_cmd(): 명령 끝 공백 제거
+ * - send_weight_response(): 하중값 전송
+ * - start_weight_stream()/stop_weight_stream(): 하중 스트림 시작/정지
+ * - send_mq3_response(): MQ-3 1회 측정값 전송
+ * - send_mq3_session(): baseline + 측정 시퀀스
+ * - start_mq3_stream()/stop_mq3_stream(): MQ-3 스트림 시작/정지
+ * - process_command(): UART 명령 처리
+ * - apMain(): 애플리케이션 메인 루프
+ */
 static HX711_t hx1 = {GPIOB, GPIO_PIN_0,  GPIOB, GPIO_PIN_1,  0, 83387.0f};
 static HX711_t hx2 = {GPIOB, GPIO_PIN_2,  GPIOB, GPIO_PIN_10, 0, 77144.0f};
 static HX711_t hx3 = {GPIOB, GPIO_PIN_12, GPIOB, GPIO_PIN_13, 0, 82693.0f};
@@ -22,6 +35,15 @@ static uint32_t mq3_last_sample_time = 0;
 
 #define WEIGHT_SAMPLE_COUNT       1U
 #define WEIGHT_STREAM_INTERVAL_MS 1000U
+/* MQ-3 측정 흐름
+ * - baseline은 부저가 울리는 동안 주변 공기값을 평균으로 잡음
+ * - baseline이 끝나면 부저를 끄고 1초 대기
+ * - 그 다음 8번 측정값을 500ms 간격으로 출력
+ */
+#define MQ3_BASELINE_SAMPLE_COUNT  8U
+#define MQ3_MEASURE_SAMPLE_COUNT   8U
+#define MQ3_MEASURE_WAIT_MS        1000U
+#define MQ3_MEASURE_INTERVAL_MS    500U
 
 static void echo_rx_char(char ch)
 {
@@ -95,27 +117,32 @@ static void send_mq3_response(void)
     uartPrintf(0, "MQ3:%u\r\n", mq3);
 }
 
-static void send_mq3_measurements(uint8_t count)
-{
-    for (uint8_t i = 0; i < count; i++) {
-        send_mq3_response();
-        if (i + 1U < count) {
-            delay_ms(500);
-        }
-    }
-}
-
-static void send_mq3_baseline(void)
-{
-    uint16_t baseline = mq3ReadAverage(8);
-    uartPrintf(0, "MQ3_BASELINE:%u\r\n", baseline);
-}
-
 static void send_mq3_session(void)
 {
+    uint8_t i;
+
+    /* 요청 응답 시작 */
     uartPrintf(0, "[CHECK_MQ3]\r\n");
-    send_mq3_baseline();
-    send_mq3_measurements(8);
+
+    /* baseline 측정 구간만 부저를 켜서 사용자에게 알려줌 */
+    buzzerStart();
+    uartPrintf(0, "MQ3_BASELINE:%u\r\n", mq3ReadAverage(MQ3_BASELINE_SAMPLE_COUNT));
+    buzzerStop();
+
+    /* baseline 직후 바로 측정하지 않고 1초 쉬어서
+     * 사용자가 측정 자세를 잡을 시간을 줌
+     */
+    delay_ms(MQ3_MEASURE_WAIT_MS);
+
+    /* 실제 MQ3 측정값을 8번 읽어서 500ms 간격으로 출력 */
+    for (i = 0; i < MQ3_MEASURE_SAMPLE_COUNT; i++) {
+        send_mq3_response();
+        if (i + 1U < MQ3_MEASURE_SAMPLE_COUNT) {
+            delay_ms(MQ3_MEASURE_INTERVAL_MS);
+        }
+    }
+
+    /* 요청 응답 종료 */
     uartPrintf(0, "[END_MQ3]\r\n");
 }
 
@@ -194,6 +221,7 @@ void apMain(void)
     uartInit();
     relayInit();
     buzzerInit();
+    mq3Init();
 
     uartPrintf(0, "Tare...\r\n");
     HX711_Tare(&hx1, 10);

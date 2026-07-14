@@ -1,5 +1,12 @@
 #include "relay.h"
 
+/*
+ * 함수 정리:
+ * - relayInit(): 릴레이 초기화
+ * - relayOn(): 릴레이 ON
+ * - relayOff(): 릴레이 OFF
+ * - relayIsOn(): 릴레이 상태 확인
+ */
 #define RELAY_ON_STATE  GPIO_PIN_SET
 #define RELAY_OFF_STATE GPIO_PIN_RESET
 

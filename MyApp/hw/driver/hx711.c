@@ -1,5 +1,14 @@
 #include "hx711.h"
 
+/*
+ * 함수 정리:
+ * - HX711_IsReady(): HX711 준비 상태 확인
+ * - HX711_Read(): 1회 원시 데이터 읽기
+ * - HX711_ReadAverage(): 여러 번 읽어서 평균
+ * - HX711_Tare(): 영점 보정
+ * - HX711_GetValue(): 영점 보정된 값 반환
+ * - HX711_GetKg(): kg 단위로 변환
+ */
 static void HX711_Delay(void)
 {
     for(volatile int i = 0; i < 10; i++);

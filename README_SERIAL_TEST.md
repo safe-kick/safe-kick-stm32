@@ -50,13 +50,13 @@ MQ3:652
 
 부저는 `MQ3_BASELINE`을 계산하는 동안만 동작하고, 측정값 8개를 전송하는 동안에는 꺼져 있다.
 
-### `TEST_MQ3`
+### `TEST_MQ3` (시리얼 테스트 전용)
 
-`MQ3_STREAM_ON`을 출력한 뒤 MQ3 값을 500ms 간격으로 계속 전송한다.
+PC 시리얼 터미널에서 MQ3 센서를 점검할 때 사용한다. `MQ3_STREAM_ON`을 출력한 뒤 MQ3 값을 500ms 간격으로 계속 전송한다. 라즈베리파이 실제 운용 로직에서는 사용하지 않는다.
 
-### `STOP_TEST_MQ3`
+### `STOP_TEST_MQ3` (시리얼 테스트 전용)
 
-`MQ3_STREAM_OFF`를 출력하고 MQ3 연속 전송을 중단한다.
+PC 시리얼 터미널에서 시작한 MQ3 연속 측정을 종료할 때 사용한다. `MQ3_STREAM_OFF`를 출력하고 MQ3 연속 전송을 중단한다. 라즈베리파이 실제 운용 로직에서는 사용하지 않는다.
 
 ### `CHECK_WEIGHT`
 
@@ -69,9 +69,9 @@ FL:-0.00 FR:0.01 RL:-0.00 RR:-0.00 TOTAL:0.01
 FL:-0.00 FR:0.01 RL:-0.00 RR:-0.00 TOTAL:0.00
 ```
 
-### `STOP_WEIGHT`
+### `STOP_WEIGHT` (시리얼 테스트 전용)
 
-무게 연속 전송을 중단하고 `[END_WEIGHT]` 다음 `WEIGHT_STREAM_OFF`를 출력한다.
+PC 시리얼 터미널에서 무게 스트림을 종료할 때 사용한다. 무게 연속 전송을 중단하고 `[END_WEIGHT]` 다음 `WEIGHT_STREAM_OFF`를 출력한다. 라즈베리파이 실제 운용 로직에서는 사용하지 않는다.
 
 ```text
 [END_WEIGHT]
@@ -223,10 +223,7 @@ STM32는 센서값과 상태 메시지만 보내고, 라즈베리파이가 최�
 | RPi -> STM32 | STM32 -> RPi | 용도 |
 |---|---|---|
 | `CHECK_MQ3` | `[CHECK_MQ3]`, `MQ3_BASELINE:...`, `MQ3:...`, `[END_MQ3]` | MQ-3 baseline + 측정 세션 |
-| `TEST_MQ3` | `MQ3_STREAM_ON`, `MQ3:...` | MQ-3 연속 측정 시작 |
-| `STOP_TEST_MQ3` | `MQ3_STREAM_OFF` | MQ-3 연속 측정 종료 |
 | `CHECK_WEIGHT` | `[CHECK_WEIGHT]`, `FL:... FR:... RL:... RR:... TOTAL:...` | 무게 스트림 시작 |
-| `STOP_WEIGHT` | `[END_WEIGHT]`, `WEIGHT_STREAM_OFF` | 무게 스트림 종료 |
 | `BUZZ_ON` | - | 부저 경고 시작 |
 | `BUZZ_OFF` | - | 부저 경고 정지 |
 | `UNLOCK` | `UNLOCK_OK` | 릴레이 ON |
@@ -245,9 +242,8 @@ STM32는 센서값과 상태 메시지만 보내고, 라즈베리파이가 최�
 ### 구현할 때 기억할 점
 
 - `CHECK_MQ3`는 baseline 측정 중 부저가 울리고, baseline 출력 후 1초 뒤부터 MQ3 8회 측정값이 나온다.
-- `TEST_MQ3`는 500ms 간격으로 MQ3 값을 계속 받는 테스트용 명령이다.
 - `CHECK_WEIGHT`는 1000ms 간격으로 `FL`, `FR`, `RL`, `RR`, `TOTAL`이 나온다.
 - `LOCK`은 스트림을 유지하는 명령이 아니라, 현재 코드에서는 무게 스트림까지 같이 종료한다.
 - `BUZZ_ON`과 `BUZZ_OFF`는 라즈베리파이가 판단해서 보내는 제어 명령이다.
-- `STOP_WEIGHT`는 테스트 종료용이고, 실제 운용 로직에서는 보통 사용하지 않는다.
+- `TEST_MQ3`, `STOP_TEST_MQ3`, `STOP_WEIGHT`는 PC 시리얼 테스트 전용이므로 라즈베리파이 운용 로직에 넣지 않는다.
 - 판단 기준은 `TOTAL` 하나로 처리해도 되고, 앱 정책에 맞게 개별 로드셀까지 같이 볼 수 있다.

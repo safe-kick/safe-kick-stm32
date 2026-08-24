@@ -2,7 +2,7 @@
 #include "bsp.h"
 #include "buzzer.h"
 #include "mq3.h"
-#include "relay.h"
+#include "motor_control.h"
 #include "uart.h"
 
 #include <string.h>
@@ -189,25 +189,34 @@ static void process_command(const char *cmd)
 
     if (strcmp(cmd, "LOCK") == 0) {
         buzzerStop();
-        relayOff();
+        motorControlLock();
         stop_weight_stream();
         uartPrintf(0, "LOCK_OK\r\n");
         return;
     }
 
     if (strcmp(cmd, "UNLOCK") == 0) {
-        relayOn();
+        motorControlUnlock();
         uartPrintf(0, "UNLOCK_OK\r\n");
+        return;
+    }
+
+    if (strcmp(cmd, "MOTOR_STATE") == 0) {
+        uartPrintf(0, "MOTOR:%s SPEED:%u\r\n",
+                   motorControlIsUnlocked() ? "UNLOCKED" : "LOCKED",
+                   motorControlGetSpeedPercent());
         return;
     }
 
     if (strcmp(cmd, "BUZZ_ON") == 0) {
         buzzerStart();
+        motorControlLimitSpeed();
         return;
     }
 
     if (strcmp(cmd, "BUZZ_OFF") == 0) {
         buzzerStop();
+        motorControlResumeSpeed();
         return;
     }
 
@@ -219,7 +228,7 @@ static void process_command(const char *cmd)
 void apMain(void)
 {
     uartInit();
-    relayInit();
+    motorControlInit();
     buzzerInit();
     mq3Init();
 
@@ -234,6 +243,7 @@ void apMain(void)
         uint32_t now = HAL_GetTick();
 
         buzzerUpdate();
+        motorControlUpdate();
 
         if (mq3_stream_active && (now - mq3_last_sample_time >= 500U)) {
             mq3_last_sample_time = now;

@@ -20,11 +20,16 @@
  * - process_command(): UART 명령 처리
  * - apMain(): 애플리케이션 메인 루프
  */
+/*
+ * 발판 네 모서리의 HX711 설정이다.
+ * 마지막 두 값은 부팅 시 덮어쓸 offset과 로드셀별 kg 변환 scale이다.
+ */
 static HX711_t hx1 = {GPIOB, GPIO_PIN_0,  GPIOB, GPIO_PIN_1,  0, 83387.0f};
 static HX711_t hx2 = {GPIOB, GPIO_PIN_2,  GPIOB, GPIO_PIN_10, 0, 77144.0f};
 static HX711_t hx3 = {GPIOB, GPIO_PIN_12, GPIOB, GPIO_PIN_13, 0, 82693.0f};
 static HX711_t hx4 = {GPIOB, GPIO_PIN_14, GPIOB, GPIO_PIN_15, 0, 85663.0f};
 
+/* UART 한 줄 명령 조립 상태와 센서 스트림 실행 상태. */
 static char rx_cmd[64];
 static uint32_t rx_cmd_len = 0;
 static uint8_t rx_terminator_seen = 0;
@@ -57,6 +62,7 @@ static void echo_rx_char(char ch)
 
 static void append_rx_char(char ch)
 {
+    /* 줄 종결자와 제어문자는 명령 본문에 저장하지 않는다. */
     if (ch == '\r' || ch == '\n') {
         return;
     }
@@ -68,6 +74,7 @@ static void append_rx_char(char ch)
     if (rx_cmd_len < (sizeof(rx_cmd) - 1)) {
         rx_cmd[rx_cmd_len++] = ch;
     } else {
+        /* 잘린 명령을 실행하지 않도록 버퍼 전체를 폐기한다. */
         rx_cmd_len = 0;
         rx_cmd[0] = '\0';
     }
@@ -85,6 +92,7 @@ static void trim_rx_cmd(char *cmd)
 
 static void send_weight_response(void)
 {
+    /* Raspberry Pi는 개별 하중과 네 채널 합계 TOTAL을 함께 사용한다. */
     float fl = HX711_GetKg(&hx1, WEIGHT_SAMPLE_COUNT);
     float fr = HX711_GetKg(&hx2, WEIGHT_SAMPLE_COUNT);
     float rl = HX711_GetKg(&hx3, WEIGHT_SAMPLE_COUNT);
@@ -98,6 +106,7 @@ static void send_weight_response(void)
 
 static void start_weight_stream(void)
 {
+    /* 첫 샘플은 다음 1초 주기에 보내 탑승자가 자세를 잡을 시간을 준다. */
     uartPrintf(0, "[CHECK_WEIGHT]\r\n");
     weight_stream_active = 1;
     weight_last_sample_time = HAL_GetTick();
@@ -161,6 +170,7 @@ static void stop_mq3_stream(void)
 
 static void process_command(const char *cmd)
 {
+    /* 센서 시험 명령과 실제 운행 제어 명령을 한 곳에서 분기한다. */
     if (strcmp(cmd, "CHECK_MQ3") == 0) {
         send_mq3_session();
         return;
@@ -188,6 +198,7 @@ static void process_command(const char *cmd)
     }
 
     if (strcmp(cmd, "LOCK") == 0) {
+        /* 잠금은 경고 ramp와 달리 출력과 릴레이를 즉시 차단한다. */
         buzzerStop();
         motorControlLock();
         stop_weight_stream();
@@ -209,6 +220,7 @@ static void process_command(const char *cmd)
     }
 
     if (strcmp(cmd, "BUZZ_ON") == 0) {
+        /* 과적 경고 중에도 릴레이는 유지하고 목표 속도만 30%로 낮춘다. */
         buzzerStart();
         motorControlLimitSpeed();
         return;
@@ -227,12 +239,14 @@ static void process_command(const char *cmd)
 
 void apMain(void)
 {
+    /* 모든 출력은 잠금 상태로 초기화한 뒤 센서 영점을 잡는다. */
     uartInit();
     motorControlInit();
     buzzerInit();
     mq3Init();
 
     uartPrintf(0, "Tare...\r\n");
+    /* 이 구간에 하중이 있으면 해당 무게가 영점으로 저장된다. */
     HX711_Tare(&hx1, 10);
     HX711_Tare(&hx2, 10);
     HX711_Tare(&hx3, 10);
@@ -243,6 +257,7 @@ void apMain(void)
         uint32_t now = HAL_GetTick();
 
         buzzerUpdate();
+        /* 두 update 함수는 delay 없이 시간 차이만 확인해 메인 루프를 막지 않는다. */
         motorControlUpdate();
 
         if (mq3_stream_active && (now - mq3_last_sample_time >= 500U)) {
@@ -260,6 +275,7 @@ void apMain(void)
             char ch = (char)uartRead(0);
             echo_rx_char(ch);
             if (ch == '\r' || ch == '\n') {
+                /* CRLF를 하나의 줄 끝으로 처리해 명령이 두 번 실행되지 않게 한다. */
                 if (rx_terminator_seen) {
                     continue;
                 }

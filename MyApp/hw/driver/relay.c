@@ -19,12 +19,14 @@ void relayInit(void)
 
 void relayOn(void)
 {
+    /* GPIO 출력과 MOTOR_STATE에 사용할 software 상태를 함께 변경한다. */
     HAL_GPIO_WritePin(RELAY_GPIO_Port, RELAY_Pin, RELAY_ON_STATE);
     relay_is_on = true;
 }
 
 void relayOff(void)
 {
+    /* 부팅과 LOCK의 기본 상태는 relay OFF다. */
     HAL_GPIO_WritePin(RELAY_GPIO_Port, RELAY_Pin, RELAY_OFF_STATE);
     relay_is_on = false;
 }

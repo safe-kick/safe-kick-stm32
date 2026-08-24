@@ -13,6 +13,7 @@
 extern UART_HandleTypeDef huart2;
 #define UART_RX_BUF_LENGTH 256
 
+/* 인터럽트는 head에 쓰고 메인 루프는 tail에서 읽는 원형 버퍼다. */
 static uint8_t rx_buf[UART_RX_BUF_LENGTH];
 static volatile uint32_t rx_buf_head =0;
 static volatile uint32_t rx_buf_tail=0;
@@ -20,6 +21,7 @@ static uint8_t rx_data;
 
 
 bool uartInit(void){
+    /* 첫 1바이트 수신을 등록하고 이후 수신은 callback에서 계속 재등록한다. */
     HAL_UART_Receive_IT(&huart2, &rx_data, 1);
     return true;
 }
@@ -29,11 +31,13 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
         rx_buf[rx_buf_head] =rx_data;
         rx_buf_head = (rx_buf_head+1)%UART_RX_BUF_LENGTH;
 
+        /* 다음 바이트를 놓치지 않도록 즉시 RX 인터럽트를 다시 건다. */
         HAL_UART_Receive_IT(&huart2, &rx_data, 1);
     }
 }
 
 uint32_t uartAvailable(uint8_t ch){
+    /* head/tail의 wrap-around를 고려해 대기 중인 바이트 수를 계산한다. */
     if (rx_buf_head >= rx_buf_tail) {
         return rx_buf_head - rx_buf_tail;
     }
@@ -54,6 +58,7 @@ uint32_t uartWrite(uint8_t ch, uint8_t *p_data,uint32_t length){
 
 
 uint32_t uartPrintf(uint8_t ch, char* fmt,...){
+    /* 센서 출력 한 줄이 256바이트를 넘지 않는다는 전제로 사용한다. */
     char buf[256];
     va_list args;
     int len;

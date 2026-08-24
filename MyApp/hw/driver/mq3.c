@@ -10,11 +10,13 @@
  */
 void mq3Init(void)
 {
+    /* 핀과 ADC 설정은 CubeMX가 생성한 MX_ADC1_Init()에서 완료된다. */
     /* ADC1 is initialized in MX_ADC1_Init(). */
 }
 
 uint16_t mq3ReadOnce(void)
 {
+    /* Software trigger 방식으로 ADC1을 한 번 변환한다. */
     HAL_ADC_Start(&hadc1);
     HAL_ADC_PollForConversion(&hadc1, 100);
 
@@ -36,6 +38,7 @@ uint16_t mq3ReadAverage(uint8_t count)
     for (uint8_t i = 0; i < count; i++) {
         sum += mq3ReadOnce();
 
+        /* 센서 반응 변화를 반영하도록 평균 샘플 사이에 500ms 간격을 둔다. */
         if (i + 1U < count) {
             delay_ms(500);
         }

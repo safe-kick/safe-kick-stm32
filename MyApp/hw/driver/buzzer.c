@@ -18,6 +18,7 @@ static uint32_t buzzer_last_toggle_time = 0;
 
 static void buzzerWrite(bool on)
 {
+    /* 하드웨어 출력과 software 상태를 항상 같이 갱신한다. */
     HAL_GPIO_WritePin(BUZZER_GPIO_Port,
                       BUZZER_Pin,
                       on ? BUZZER_ON_STATE : BUZZER_OFF_STATE);
@@ -31,6 +32,7 @@ void buzzerInit(void)
 
 void buzzerStart(void)
 {
+    /* 경고를 즉시 알리기 위해 시작 순간에는 ON으로 출력한다. */
     buzzer_active = true;
     buzzerWrite(true);
     buzzer_last_toggle_time = HAL_GetTick();
@@ -50,6 +52,7 @@ void buzzerUpdate(void)
         return;
     }
 
+    /* HAL_Delay 없이 1초마다 토글해 UART와 센서 루프를 계속 실행한다. */
     now = HAL_GetTick();
     if ((now - buzzer_last_toggle_time) >= BUZZER_TOGGLE_TIME_MS) {
         buzzerWrite(!buzzer_output_on);

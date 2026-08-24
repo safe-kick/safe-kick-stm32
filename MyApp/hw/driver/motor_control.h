@@ -3,6 +3,7 @@
 #include "hw_def.h"
 
 void motorControlInit(void);
+/* 메인 루프에서 반복 호출해 non-blocking 속도 ramp를 진행한다. */
 void motorControlUpdate(void);
 void motorControlUnlock(void);
 void motorControlLock(void);

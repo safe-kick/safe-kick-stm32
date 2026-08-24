@@ -7,4 +7,3 @@ void buzzerInit(void);
 void buzzerStart(void);
 void buzzerStop(void);
 void buzzerUpdate(void);
-bool buzzerIsActive(void);

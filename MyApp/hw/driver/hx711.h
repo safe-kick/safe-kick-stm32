@@ -14,8 +14,6 @@ typedef struct
     float scale;    /* kg 변환용 raw-counts/kg 보정계수 */
 } HX711_t;
 
-uint8_t HX711_IsReady(HX711_t *hx);
-
 int32_t HX711_Read(HX711_t *hx);
 
 int32_t HX711_ReadAverage(HX711_t *hx, uint8_t times);

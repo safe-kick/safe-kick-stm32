@@ -5,7 +5,6 @@
  * - uartInit(): UART 수신 인터럽트 시작
  * - HAL_UART_RxCpltCallback(): 수신 데이터 버퍼 저장
  * - uartAvailable(): 읽을 수 있는 데이터 개수 확인
- * - uartOpen(): UART 포트 오픈 처리
  * - uartWrite(): UART 송신
  * - uartPrintf(): printf 스타일 송신
  * - uartRead(): 1바이트 읽기
@@ -45,10 +44,6 @@ uint32_t uartAvailable(uint8_t ch){
     return UART_RX_BUF_LENGTH - rx_buf_tail + rx_buf_head;
 }
 
-
-bool uartOpen(uint8_t ch,uint32_t baud){
-    return true;
-}
 
 uint32_t uartWrite(uint8_t ch, uint8_t *p_data,uint32_t length){
     if (HAL_UART_Transmit(&huart2, p_data, length, 100) == HAL_OK) return length;

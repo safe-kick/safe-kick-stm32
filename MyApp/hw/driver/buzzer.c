@@ -6,7 +6,6 @@
  * - buzzerStart(): 부저 동작 시작
  * - buzzerStop(): 부저 정지
  * - buzzerUpdate(): 주기적으로 ON/OFF 토글
- * - buzzerIsActive(): 부저 활성 상태 확인
  */
 #define BUZZER_ON_STATE       GPIO_PIN_SET
 #define BUZZER_OFF_STATE      GPIO_PIN_RESET
@@ -58,9 +57,4 @@ void buzzerUpdate(void)
         buzzerWrite(!buzzer_output_on);
         buzzer_last_toggle_time = now;
     }
-}
-
-bool buzzerIsActive(void)
-{
-    return buzzer_active;
 }

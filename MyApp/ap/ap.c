@@ -243,8 +243,6 @@ void apMain(void)
     uartInit();
     motorControlInit();
     buzzerInit();
-    mq3Init();
-
     uartPrintf(0, "Tare...\r\n");
     /* 이 구간에 하중이 있으면 해당 무게가 영점으로 저장된다. */
     HX711_Tare(&hx1, 10);

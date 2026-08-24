@@ -2,7 +2,6 @@
 
 /*
  * 함수 정리:
- * - HX711_IsReady(): HX711 준비 상태 확인
  * - HX711_Read(): 1회 원시 데이터 읽기
  * - HX711_ReadAverage(): 여러 번 읽어서 평균
  * - HX711_Tare(): 영점 보정
@@ -13,14 +12,6 @@ static void HX711_Delay(void)
 {
     /* HX711 SCK high/low 최소 폭을 만족하기 위한 짧은 software delay. */
     for(volatile int i = 0; i < 10; i++);
-}
-
-uint8_t HX711_IsReady(HX711_t *hx)
-{
-    return (HAL_GPIO_ReadPin(
-                hx->DT_Port,
-                hx->DT_Pin)
-            == GPIO_PIN_RESET);
 }
 
 int32_t HX711_Read(HX711_t *hx)

@@ -15,7 +15,7 @@
  * - send_weight_response(): 하중값 전송
  * - start_weight_stream()/stop_weight_stream(): 하중 스트림 시작/정지
  * - send_mq3_response(): MQ-3 1회 측정값 전송
- * - send_mq3_session(): baseline + 측정 시퀀스
+ * - update_mq3_operation(): baseline/안내음/실측 비차단 상태 처리
  * - start_mq3_stream()/stop_mq3_stream(): MQ-3 스트림 시작/정지
  * - process_command(): UART 명령 처리
  * - apMain(): 애플리케이션 메인 루프
@@ -38,17 +38,28 @@ static uint32_t weight_last_sample_time = 0;
 static uint8_t mq3_stream_active = 0;
 static uint32_t mq3_last_sample_time = 0;
 
+typedef enum {
+    MQ3_OPERATION_IDLE = 0,
+    MQ3_OPERATION_BASELINE,
+    MQ3_OPERATION_PRE_MEASURE_BUZZER,
+    MQ3_OPERATION_MEASURE
+} mq3_operation_t;
+
+static mq3_operation_t mq3_operation = MQ3_OPERATION_IDLE;
+static uint8_t mq3_legacy_session = 0;
+static uint8_t mq3_sample_count = 0;
+static uint32_t mq3_sample_sum = 0;
+static uint32_t mq3_operation_time = 0;
+
 #define WEIGHT_SAMPLE_COUNT       1U
 #define WEIGHT_STREAM_INTERVAL_MS 1000U
-/* MQ-3 측정 흐름
- * - baseline은 부저가 울리는 동안 주변 공기값을 평균으로 잡음
- * - baseline이 끝나면 부저를 끄고 1초 대기
- * - 그 다음 8번 측정값을 500ms 간격으로 출력
- */
+/* baseline과 실제 측정은 각각 8회, 500ms 간격을 유지한다. */
 #define MQ3_BASELINE_SAMPLE_COUNT  8U
 #define MQ3_MEASURE_SAMPLE_COUNT   8U
-#define MQ3_MEASURE_WAIT_MS        1000U
+#define MQ3_BASELINE_INTERVAL_MS   500U
 #define MQ3_MEASURE_INTERVAL_MS    500U
+/* 실제 측정 전에 한 번만 울리는 유한한 안내음 길이. */
+#define MQ3_PRE_MEASURE_BUZZER_MS  1000U
 
 static void echo_rx_char(char ch)
 {
@@ -126,33 +137,106 @@ static void send_mq3_response(void)
     uartPrintf(0, "MQ3:%u\r\n", mq3);
 }
 
-static void send_mq3_session(void)
+static void begin_mq3_measure(uint32_t now)
 {
-    uint8_t i;
-
-    /* 요청 응답 시작 */
-    uartPrintf(0, "[CHECK_MQ3]\r\n");
-
-    /* baseline 측정 구간만 부저를 켜서 사용자에게 알려줌 */
-    buzzerStart();
-    uartPrintf(0, "MQ3_BASELINE:%u\r\n", mq3ReadAverage(MQ3_BASELINE_SAMPLE_COUNT));
     buzzerStop();
+    uartPrintf(0, "MEASURE_BEGIN\r\n");
+    mq3_operation = MQ3_OPERATION_MEASURE;
+    mq3_sample_count = 1U;
+    mq3_operation_time = now;
+    send_mq3_response();
+}
 
-    /* baseline 직후 바로 측정하지 않고 1초 쉬어서
-     * 사용자가 측정 자세를 잡을 시간을 줌
-     */
-    delay_ms(MQ3_MEASURE_WAIT_MS);
-
-    /* 실제 MQ3 측정값을 8번 읽어서 500ms 간격으로 출력 */
-    for (i = 0; i < MQ3_MEASURE_SAMPLE_COUNT; i++) {
-        send_mq3_response();
-        if (i + 1U < MQ3_MEASURE_SAMPLE_COUNT) {
-            delay_ms(MQ3_MEASURE_INTERVAL_MS);
-        }
+static void start_mq3_baseline(uint8_t legacy_session)
+{
+    if (mq3_operation != MQ3_OPERATION_IDLE) {
+        uartPrintf(0, "ERR:MQ3_BUSY\r\n");
+        return;
     }
 
-    /* 요청 응답 종료 */
-    uartPrintf(0, "[END_MQ3]\r\n");
+    mq3_legacy_session = legacy_session;
+    uartPrintf(0,
+               legacy_session ? "[CHECK_MQ3]\r\n" : "[CHECK_MQ3_BASELINE]\r\n");
+    mq3_sample_sum = mq3ReadOnce();
+    mq3_sample_count = 1U;
+    mq3_operation_time = HAL_GetTick();
+    mq3_operation = MQ3_OPERATION_BASELINE;
+}
+
+static void start_mq3_measure(void)
+{
+    if (mq3_operation != MQ3_OPERATION_IDLE) {
+        uartPrintf(0, "ERR:MQ3_BUSY\r\n");
+        return;
+    }
+
+    mq3_legacy_session = 0U;
+    mq3_operation = MQ3_OPERATION_PRE_MEASURE_BUZZER;
+    mq3_operation_time = HAL_GetTick();
+    uartPrintf(0, "[CHECK_MQ3_MEASURE]\r\n");
+    buzzerStart();
+}
+
+static void cancel_mq3_operation(void)
+{
+    if (mq3_operation == MQ3_OPERATION_PRE_MEASURE_BUZZER) {
+        buzzerStop();
+    }
+    mq3_operation = MQ3_OPERATION_IDLE;
+    mq3_legacy_session = 0U;
+    mq3_sample_count = 0U;
+    mq3_sample_sum = 0U;
+}
+
+static void update_mq3_operation(uint32_t now)
+{
+    if (mq3_operation == MQ3_OPERATION_BASELINE &&
+        (now - mq3_operation_time) >= MQ3_BASELINE_INTERVAL_MS) {
+        mq3_sample_sum += mq3ReadOnce();
+        mq3_sample_count++;
+        mq3_operation_time = now;
+
+        if (mq3_sample_count >= MQ3_BASELINE_SAMPLE_COUNT) {
+            uartPrintf(0,
+                       "MQ3_BASELINE:%u\r\n",
+                       (uint16_t)(mq3_sample_sum / MQ3_BASELINE_SAMPLE_COUNT));
+            if (mq3_legacy_session) {
+                mq3_operation = MQ3_OPERATION_PRE_MEASURE_BUZZER;
+                mq3_operation_time = now;
+                buzzerStart();
+            } else {
+                uartPrintf(0, "[END_MQ3_BASELINE]\r\n");
+                cancel_mq3_operation();
+            }
+        }
+        return;
+    }
+
+    if (mq3_operation == MQ3_OPERATION_PRE_MEASURE_BUZZER &&
+        (now - mq3_operation_time) >= MQ3_PRE_MEASURE_BUZZER_MS) {
+        begin_mq3_measure(now);
+        return;
+    }
+
+    if (mq3_operation == MQ3_OPERATION_MEASURE &&
+        (now - mq3_operation_time) >= MQ3_MEASURE_INTERVAL_MS) {
+        send_mq3_response();
+        mq3_sample_count++;
+        mq3_operation_time = now;
+
+        if (mq3_sample_count >= MQ3_MEASURE_SAMPLE_COUNT) {
+            uartPrintf(0, "MEASURE_END\r\n");
+            uartPrintf(0,
+                       mq3_legacy_session ? "[END_MQ3]\r\n" : "[END_MQ3_MEASURE]\r\n");
+            cancel_mq3_operation();
+        }
+    }
+}
+
+static void send_mq3_session(void)
+{
+    /* 기존 시리얼 도구 호환: baseline 뒤 새 유한 안내음/실측 흐름을 실행한다. */
+    start_mq3_baseline(1U);
 }
 
 static void start_mq3_stream(void)
@@ -173,6 +257,16 @@ static void process_command(const char *cmd)
     /* 센서 시험 명령과 실제 운행 제어 명령을 한 곳에서 분기한다. */
     if (strcmp(cmd, "CHECK_MQ3") == 0) {
         send_mq3_session();
+        return;
+    }
+
+    if (strcmp(cmd, "CHECK_MQ3_BASELINE") == 0) {
+        start_mq3_baseline(0U);
+        return;
+    }
+
+    if (strcmp(cmd, "CHECK_MQ3_MEASURE") == 0) {
+        start_mq3_measure();
         return;
     }
 
@@ -199,6 +293,7 @@ static void process_command(const char *cmd)
 
     if (strcmp(cmd, "LOCK") == 0) {
         /* 잠금은 경고 ramp와 달리 출력과 릴레이를 즉시 차단한다. */
+        cancel_mq3_operation();
         buzzerStop();
         motorControlLock();
         stop_weight_stream();
@@ -255,6 +350,7 @@ void apMain(void)
         uint32_t now = HAL_GetTick();
 
         buzzerUpdate();
+        update_mq3_operation(now);
         /* 두 update 함수는 delay 없이 시간 차이만 확인해 메인 루프를 막지 않는다. */
         motorControlUpdate();
 

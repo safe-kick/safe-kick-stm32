@@ -30,13 +30,24 @@ READY
 
 ## 명령어
 
-### `CHECK_MQ3`
+### `CHECK_MQ3_BASELINE`
 
-baseline 측정 중에만 부저가 울리고, baseline 출력 후 1초 뒤부터 MQ3 측정값 8개를 500ms 간격으로 전송한다.
+부저 없이 주변 공기 baseline을 8회, 500ms 간격으로 측정한다.
 
 ```text
-[CHECK_MQ3]
+[CHECK_MQ3_BASELINE]
 MQ3_BASELINE:627
+[END_MQ3_BASELINE]
+```
+
+### `CHECK_MQ3_MEASURE`
+
+1초 유한 안내음이 완전히 끝난 뒤 `MEASURE_BEGIN`을 보내고, MQ-3 실측값 8개를
+500ms 간격으로 전송한다. 부저 중 값은 실측 표본에 포함되지 않는다.
+
+```text
+[CHECK_MQ3_MEASURE]
+MEASURE_BEGIN
 MQ3:756
 MQ3:674
 MQ3:608
@@ -45,10 +56,14 @@ MQ3:677
 MQ3:685
 MQ3:710
 MQ3:652
-[END_MQ3]
+MEASURE_END
+[END_MQ3_MEASURE]
 ```
 
-부저는 `MQ3_BASELINE`을 계산하는 동안만 동작하고, 측정값 8개를 전송하는 동안에는 꺼져 있다.
+### `CHECK_MQ3` (호환용)
+
+기존 시리얼 도구를 위해 유지한다. baseline과 실측을 연속 실행하지만 새 운용
+코드에서는 분리된 두 명령을 사용한다.
 
 ### `TEST_MQ3` (시리얼 테스트 전용)
 
@@ -110,13 +125,14 @@ UNLOCK_OK
 ## 권장 테스트 순서
 
 1. 보드 리셋 후 `READY` 출력을 확인한다.
-2. `CHECK_MQ3`를 입력하고 MQ3 응답을 확인한다.
-3. `CHECK_WEIGHT`를 입력하고 무게값이 1000ms 간격으로 출력되는지 확인한다.
-4. 무게 스트림이 실행되는 동안 `BUZZ_ON`을 입력한다.
-5. 무게값 출력과 부저 경고가 동시에 동작하는지 확인한다.
-6. `BUZZ_OFF`를 입력해 부저가 즉시 멈추는지 확인한다.
-7. `UNLOCK`을 입력해 릴레이가 ON으로 전환되는지 확인한다.
-8. `LOCK`을 입력해 부저와 릴레이가 OFF되고 무게 스트림이 종료되는지 확인한다.
+2. `CHECK_MQ3_BASELINE`을 입력하고 부저 없이 baseline 응답이 오는지 확인한다.
+3. `CHECK_MQ3_MEASURE`를 입력하고 부저 종료 뒤 `MEASURE_BEGIN`과 MQ3 표본 8개가 오는지 확인한다.
+4. `CHECK_WEIGHT`를 입력하고 무게값이 1000ms 간격으로 출력되는지 확인한다.
+5. 무게 스트림이 실행되는 동안 `BUZZ_ON`을 입력한다.
+6. 무게값 출력과 부저 경고가 동시에 동작하는지 확인한다.
+7. `BUZZ_OFF`를 입력해 부저가 즉시 멈추는지 확인한다.
+8. `UNLOCK`을 입력해 릴레이가 ON으로 전환되는지 확인한다.
+9. `LOCK`을 입력해 부저와 릴레이가 OFF되고 무게 스트림이 종료되는지 확인한다.
 
 ## 릴레이 주의사항
 
@@ -222,7 +238,9 @@ STM32는 센서값과 상태 메시지만 보내고, 라즈베리파이가 최�
 
 | RPi -> STM32 | STM32 -> RPi | 용도 |
 |---|---|---|
-| `CHECK_MQ3` | `[CHECK_MQ3]`, `MQ3_BASELINE:...`, `MQ3:...`, `[END_MQ3]` | MQ-3 baseline + 측정 세션 |
+| `CHECK_MQ3_BASELINE` | `[CHECK_MQ3_BASELINE]`, `MQ3_BASELINE:...`, `[END_MQ3_BASELINE]` | 조용한 MQ-3 baseline 세션 |
+| `CHECK_MQ3_MEASURE` | `[CHECK_MQ3_MEASURE]`, `MEASURE_BEGIN`, `MQ3:...`, `MEASURE_END` | 안내음 뒤 MQ-3 실측 세션 |
+| `CHECK_MQ3` | 기존 통합 응답 | 호환용 통합 세션 |
 | `CHECK_WEIGHT` | `[CHECK_WEIGHT]`, `FL:... FR:... RL:... RR:... TOTAL:...` | 무게 스트림 시작 |
 | `BUZZ_ON` | - | 부저 경고 시작 |
 | `BUZZ_OFF` | - | 부저 경고 정지 |
@@ -241,7 +259,8 @@ STM32는 센서값과 상태 메시지만 보내고, 라즈베리파이가 최�
 
 ### 구현할 때 기억할 점
 
-- `CHECK_MQ3`는 baseline 측정 중 부저가 울리고, baseline 출력 후 1초 뒤부터 MQ3 8회 측정값이 나온다.
+- 새 운용 흐름은 `CHECK_MQ3_BASELINE`과 `CHECK_MQ3_MEASURE`를 분리해 사용한다.
+- `MEASURE_BEGIN`은 STM32가 안내음을 직접 종료한 뒤 전송한다.
 - `CHECK_WEIGHT`는 1000ms 간격으로 `FL`, `FR`, `RL`, `RR`, `TOTAL`이 나온다.
 - `LOCK`은 스트림을 유지하는 명령이 아니라, 현재 코드에서는 무게 스트림까지 같이 종료한다.
 - `BUZZ_ON`과 `BUZZ_OFF`는 라즈베리파이가 판단해서 보내는 제어 명령이다.

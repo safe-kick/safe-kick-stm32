@@ -4,7 +4,7 @@ Safe Kick의 STM32F411RE 펌웨어 프로젝트다. STM32는 MQ-3 알코올 센�
 
 ## 주요 기능
 
-- MQ-3 baseline 조용한 선측정과 안내음 이후 실측 8회 분리
+- MQ-3 baseline 3.5초 부저 안내와 버튼 입력 후 실측 8회 분리
 - HX711 4채널 무게 측정 및 1초 주기 스트림
 - UART 명령 수신과 키보드 입력 echo
 - 릴레이 잠금 및 잠금 해제 제어
@@ -60,8 +60,8 @@ USART2는 `115200-8-N-1`, flow control 없음으로 사용한다.
 
 | 명령 | 동작 |
 |---|---|
-| `CHECK_MQ3_BASELINE` | 부저 없이 baseline 8회 평균 측정 |
-| `CHECK_MQ3_MEASURE` | 1초 안내음 종료 뒤 `MEASURE_BEGIN`, MQ-3 8회 측정 |
+| `CHECK_MQ3_BASELINE` | 부저를 연속으로 켜고 baseline을 500ms 간격으로 8회 측정한 뒤 부저 종료(총 3.5초) |
+| `CHECK_MQ3_MEASURE` | `MEASURE_BEGIN`을 보내고 MQ-3 실측값 8회 즉시 측정 |
 | `CHECK_MQ3` | 기존 도구 호환용 통합 세션 |
 | `TEST_MQ3` | `MQ3_STREAM_ON` 출력 후 500ms 주기 MQ-3 연속 측정 시작 |
 | `STOP_TEST_MQ3` | `MQ3_STREAM_OFF` 출력 후 MQ-3 연속 측정 종료 |

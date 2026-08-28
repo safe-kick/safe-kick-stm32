@@ -41,7 +41,6 @@ static uint32_t mq3_last_sample_time = 0;
 typedef enum {
     MQ3_OPERATION_IDLE = 0,
     MQ3_OPERATION_BASELINE,
-    MQ3_OPERATION_PRE_MEASURE_BUZZER,
     MQ3_OPERATION_MEASURE
 } mq3_operation_t;
 
@@ -58,9 +57,6 @@ static uint32_t mq3_operation_time = 0;
 #define MQ3_MEASURE_SAMPLE_COUNT   8U
 #define MQ3_BASELINE_INTERVAL_MS   500U
 #define MQ3_MEASURE_INTERVAL_MS    500U
-/* 실제 측정 전에 한 번만 울리는 유한한 안내음 길이. */
-#define MQ3_PRE_MEASURE_BUZZER_MS  1000U
-
 static void echo_rx_char(char ch)
 {
     if (ch == '\r') {
@@ -161,6 +157,9 @@ static void start_mq3_baseline(uint8_t legacy_session)
     mq3_sample_count = 1U;
     mq3_operation_time = HAL_GetTick();
     mq3_operation = MQ3_OPERATION_BASELINE;
+    /* 8 samples at 500 ms span exactly 3.5 seconds.  Keep the buzzer active
+       for that complete baseline window so the user knows not to blow yet. */
+    buzzerStartContinuous();
 }
 
 static void start_mq3_measure(void)
@@ -171,15 +170,13 @@ static void start_mq3_measure(void)
     }
 
     mq3_legacy_session = 0U;
-    mq3_operation = MQ3_OPERATION_PRE_MEASURE_BUZZER;
-    mq3_operation_time = HAL_GetTick();
     uartPrintf(0, "[CHECK_MQ3_MEASURE]\r\n");
-    buzzerStart();
+    begin_mq3_measure(HAL_GetTick());
 }
 
 static void cancel_mq3_operation(void)
 {
-    if (mq3_operation == MQ3_OPERATION_PRE_MEASURE_BUZZER) {
+    if (mq3_operation == MQ3_OPERATION_BASELINE) {
         buzzerStop();
     }
     mq3_operation = MQ3_OPERATION_IDLE;
@@ -197,24 +194,17 @@ static void update_mq3_operation(uint32_t now)
         mq3_operation_time = now;
 
         if (mq3_sample_count >= MQ3_BASELINE_SAMPLE_COUNT) {
+            buzzerStop();
             uartPrintf(0,
                        "MQ3_BASELINE:%u\r\n",
                        (uint16_t)(mq3_sample_sum / MQ3_BASELINE_SAMPLE_COUNT));
             if (mq3_legacy_session) {
-                mq3_operation = MQ3_OPERATION_PRE_MEASURE_BUZZER;
-                mq3_operation_time = now;
-                buzzerStart();
+                begin_mq3_measure(now);
             } else {
                 uartPrintf(0, "[END_MQ3_BASELINE]\r\n");
                 cancel_mq3_operation();
             }
         }
-        return;
-    }
-
-    if (mq3_operation == MQ3_OPERATION_PRE_MEASURE_BUZZER &&
-        (now - mq3_operation_time) >= MQ3_PRE_MEASURE_BUZZER_MS) {
-        begin_mq3_measure(now);
         return;
     }
 

@@ -4,6 +4,7 @@
  * 함수 정리:
  * - buzzerInit(): 부저 초기화
  * - buzzerStart(): 부저 동작 시작
+ * - buzzerStartContinuous(): 토글 없이 부저를 계속 켬
  * - buzzerStop(): 부저 정지
  * - buzzerUpdate(): 주기적으로 ON/OFF 토글
  */
@@ -35,6 +36,13 @@ void buzzerStart(void)
     buzzer_active = true;
     buzzerWrite(true);
     buzzer_last_toggle_time = HAL_GetTick();
+}
+
+void buzzerStartContinuous(void)
+{
+    /* MQ-3 기준값을 잡는 동안에는 끊기지 않는 안내음을 사용한다. */
+    buzzer_active = false;
+    buzzerWrite(true);
 }
 
 void buzzerStop(void)

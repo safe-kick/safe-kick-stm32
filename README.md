@@ -61,7 +61,7 @@ USART2는 `115200-8-N-1`, flow control 없음으로 사용한다.
 | 명령 | 동작 |
 |---|---|
 | `CHECK_MQ3_BASELINE` | 부저를 연속으로 켜고 baseline을 500ms 간격으로 8회 측정한 뒤 부저 종료(총 3.5초) |
-| `CHECK_MQ3_MEASURE` | `MEASURE_BEGIN`을 보내고 MQ-3 실측값 8회 즉시 측정 |
+| `CHECK_MQ3_MEASURE` | `MEASURE_BEGIN` 후 첫 표본을 즉시 보내고 500ms 간격으로 총 8회 측정 |
 | `CHECK_MQ3` | 기존 도구 호환용 통합 세션 |
 | `TEST_MQ3` | `MQ3_STREAM_ON` 출력 후 500ms 주기 MQ-3 연속 측정 시작 |
 | `STOP_TEST_MQ3` | `MQ3_STREAM_OFF` 출력 후 MQ-3 연속 측정 종료 |
@@ -77,5 +77,5 @@ USART2는 `115200-8-N-1`, flow control 없음으로 사용한다.
 
 ## 역할 분리
 
-- STM32: 센서 측정, UART 전송, 릴레이 및 부저 제어
+- STM32: 센서 측정, UART 전송, 릴레이·부저·모터 PWM 제어
 - Raspberry Pi: MQ-3 판정, 탑승 인원 판단, 앱 연동 및 STM32 명령 전송

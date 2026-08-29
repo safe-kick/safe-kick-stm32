@@ -137,6 +137,7 @@ safe-kick/
 │   ├── Src/                    # 초기화 및 인터럽트 코드
 │   └── Startup/                # STM32 시작 코드
 ├── Drivers/                    # STM32 HAL 및 CMSIS 드라이버
+├── docs/images/                # 실제 하드웨어 개별 시험 캡처
 ├── MyApp/
 │   ├── ap/
 │   │   └── ap.c                # UART 명령 처리와 메인 루프

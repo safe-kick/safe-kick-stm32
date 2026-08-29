@@ -2,6 +2,13 @@
 
 Raspberry Pi 없이 PC 시리얼 터미널에서 STM32의 센서, 릴레이, 부저와 모터 제어를 테스트하는 방법이다.
 
+Raspberry Pi의 `tools/stm32_menu.py`로도 동일한 UART 명령을 실행할 수 있다. 도구
+설치와 포트 점유 해제 방법은
+[safe-kick-raspi README](https://github.com/safe-kick/safe-kick-raspi#stm32-uart-테스트-도구-실행)를
+참고한다. 원본 시험 기록은
+[Notion 하드웨어 개별 테스트](https://www.notion.so/3c3e8d3fa9438151a82ce8506d277b61)에서
+확인할 수 있다.
+
 ## 시험 전 안전 점검
 
 1. 배선 변경 전 NUCLEO, 센서 전원, 모터 전원을 모두 차단한다.
@@ -175,6 +182,70 @@ UNLOCK_OK
 
 MQ-3의 음주 여부와 로드셀의 최종 탑승 인원 여부는 STM32 단독 시험에서 확정하지
 않는다. STM32는 센서값과 상태를 전달하고 Raspberry Pi가 최종 안전 판정을 수행한다.
+
+## 하드웨어 개별 시험 기록
+
+### 로드셀·HX711
+
+빈 발판에서 각 채널이 약 `-1~1kg`, `TOTAL`이 약 `-2~2kg` 범위인지 확인한 뒤
+2.5kg 아령을 FL, FR, RL, RR 위치에 차례로 올려 시험했다. 실제 시험에서는 빈
+발판 `TOTAL:-0.04kg`, 2.5kg 아령 `TOTAL:2.44kg`를 측정했다. 하중 제거 후 0kg
+근처 복귀와 `WEIGHT_STREAM_OFF`까지 확인했다.
+
+![로드셀 2.5kg 아령 개별 시험](docs/images/loadcell-test.png)
+
+### MQ-3
+
+`TEST_MQ3` 연속 측정에서 낮은 원시값 구간과 센서 반응 후 최대 `3897`까지
+상승하는 표본을 확인했다.
+
+```text
+MQ3_STREAM_ON
+MQ3:335
+MQ3:351
+MQ3:320
+MQ3:1459
+MQ3:2985
+MQ3:3897
+```
+
+![MQ-3 ADC 원시값 연속 측정](docs/images/mq3-test.png)
+
+이 값은 특정 농도 단위가 아닌 ADC 원시값이다. 실제 앱 흐름은
+`CHECK_MQ3_BASELINE`과 `CHECK_MQ3_MEASURE`를 분리하며, Raspberry Pi는 8개 표본에
+대해 다음 두 조건 중 하나를 만족하면 음주로 판정한다.
+
+- `sample - baseline >= 2000`인 표본이 3회 연속 발생
+- 원시 표본 하나라도 `1500` 초과
+
+이 판정 기준은 STM32 펌웨어가 아니라 Raspberry Pi의 `config.toml`에서 관리한다.
+
+### 릴레이·부저·L298N·모터
+
+다음 순서를 최종 확인 항목으로 사용한다.
+
+1. `LOCK`, `MOTOR_STATE` 순서로 `MOTOR:LOCKED SPEED:0`을 확인한다.
+2. `CHECK_WEIGHT`로 무게 스트림을 시작한다.
+3. `UNLOCK`의 `UNLOCK_OK` 후 릴레이 ON, PWM 0% 대기를 확인한다.
+4. 전방 하중 비율 70% 이상이 2회 연속 수신되면 PWM이 30%에서 시작하는지 확인한다.
+5. 전·후방 하중에 따라 목표 PWM이 30~70%에서 최대 1초마다 5%씩 변하는지 확인한다.
+6. `BUZZ_ON`에서 부저 경고와 목표 PWM 최대 30% 제한을 확인한다.
+7. `BUZZ_OFF`에서 하중 기반 제어 재개를 확인한다.
+8. 발판 무게가 1kg 미만이면 릴레이와 스트림을 유지한 채 PWM만 0%인지 확인한다.
+9. `LOCK`에서 PWM 0%, coast, 부저·릴레이 OFF, 무게 스트림 종료를 확인한다.
+
+## 문제 해결
+
+| 증상 | 확인 사항 |
+|---|---|
+| STM32 응답 없음 | ST-LINK USB, 115200 baud, TX/RX 교차 연결, 공통 GND, 펌웨어 업로드 확인 |
+| UART 포트를 열 수 없음 | Uvicorn, miniterm, CubeIDE Serial Terminal의 포트 점유 확인 |
+| 로드셀 채널이 계속 0.00 | 해당 HX711의 DT/SCK, 전원, 로드셀 배선과 하중 전달 상태 확인 |
+| 하중을 올리면 음수 | 로드셀 A+/A- 또는 설치 방향과 scale 부호 확인 |
+| 값은 안정적이지만 실제 무게와 다름 | 채널별 scale 값을 기준 추로 재보정 |
+| MQ-3가 0 또는 4095 부근에 고정 | AO 배선, GND, ADC 입력전압, 센서 모듈 전원 확인 |
+| `UNLOCK_OK` 후 모터가 즉시 회전 | ENA 점퍼와 PA8 PWM 연결, 부팅 시 PWM 0% 여부 확인 |
+| 릴레이 ON/OFF가 반대로 동작 | 모듈의 Active-High/Low 특성과 `relay.c` GPIO 상태 확인 |
 
 ## 릴레이 주의사항
 

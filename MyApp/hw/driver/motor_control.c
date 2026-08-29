@@ -5,7 +5,8 @@
 
 #define MOTOR_PWM_TIMER                htim1
 #define MOTOR_PWM_CHANNEL              TIM_CHANNEL_1
-#define MOTOR_NORMAL_SPEED_PERCENT     70U
+#define MOTOR_MINIMUM_SPEED_PERCENT    20U
+#define MOTOR_MAXIMUM_SPEED_PERCENT    70U
 #define MOTOR_WARNING_SPEED_PERCENT    30U
 #define MOTOR_RAMP_STEP_PERCENT        1U
 #define MOTOR_RAMP_INTERVAL_MS         50U
@@ -14,6 +15,7 @@
 static uint8_t current_speed_percent = 0;
 static uint8_t target_speed_percent = 0;
 static uint32_t last_ramp_time = 0;
+static bool warning_limited = false;
 
 static void motorWriteSpeed(uint8_t percent)
 {
@@ -53,6 +55,7 @@ void motorControlInit(void)
     }
     relayInit();
     target_speed_percent = 0U;
+    warning_limited = false;
     last_ramp_time = HAL_GetTick();
 }
 
@@ -77,13 +80,14 @@ void motorControlUpdate(void)
 
 void motorControlUnlock(void)
 {
-    /* 방향을 먼저 고정하고 릴레이를 켠 뒤 70%까지 부드럽게 가속한다. */
+    /* 방향과 릴레이를 준비하고 최소 주행 출력까지 부드럽게 올린다. */
     if (!relayIsOn()) {
         motorWriteSpeed(0U);
         motorSetForward();
         relayOn();
     }
-    target_speed_percent = MOTOR_NORMAL_SPEED_PERCENT;
+    warning_limited = false;
+    target_speed_percent = MOTOR_MINIMUM_SPEED_PERCENT;
     last_ramp_time = HAL_GetTick();
 }
 
@@ -91,24 +95,65 @@ void motorControlLock(void)
 {
     /* 안전 명령이므로 ramp 없이 PWM 0%, coast, relay OFF를 즉시 적용한다. */
     target_speed_percent = 0U;
+    warning_limited = false;
     motorWriteSpeed(0U);
     motorCoast();
     relayOff();
 }
 
+void motorControlPause(void)
+{
+    /* 무인 발판에서는 릴레이와 방향은 유지하고 PWM만 즉시 제거한다. */
+    target_speed_percent = 0U;
+    motorWriteSpeed(0U);
+}
+
+void motorControlIncreaseSpeed(uint8_t step_percent)
+{
+    uint16_t next;
+
+    if (!relayIsOn() || warning_limited) {
+        return;
+    }
+
+    if (target_speed_percent == 0U) {
+        target_speed_percent = MOTOR_MINIMUM_SPEED_PERCENT;
+        return;
+    }
+
+    next = (uint16_t)target_speed_percent + step_percent;
+    target_speed_percent = next > MOTOR_MAXIMUM_SPEED_PERCENT
+        ? MOTOR_MAXIMUM_SPEED_PERCENT
+        : (uint8_t)next;
+}
+
+void motorControlDecreaseSpeed(uint8_t step_percent)
+{
+    if (!relayIsOn() || warning_limited || target_speed_percent == 0U) {
+        return;
+    }
+
+    if (target_speed_percent <= MOTOR_MINIMUM_SPEED_PERCENT + step_percent) {
+        target_speed_percent = MOTOR_MINIMUM_SPEED_PERCENT;
+    } else {
+        target_speed_percent -= step_percent;
+    }
+}
+
 void motorControlLimitSpeed(void)
 {
-    /* 릴레이가 꺼진 잠금 상태에서는 경고 명령으로 모터를 켜지 않는다. */
+    /* 경고는 현재보다 빠르게 만들지 않고 최대 출력만 30%로 제한한다. */
     if (relayIsOn()) {
-        target_speed_percent = MOTOR_WARNING_SPEED_PERCENT;
+        warning_limited = true;
+        if (target_speed_percent > MOTOR_WARNING_SPEED_PERCENT) {
+            target_speed_percent = MOTOR_WARNING_SPEED_PERCENT;
+        }
     }
 }
 
 void motorControlResumeSpeed(void)
 {
-    if (relayIsOn()) {
-        target_speed_percent = MOTOR_NORMAL_SPEED_PERCENT;
-    }
+    warning_limited = false;
 }
 
 bool motorControlIsUnlocked(void)

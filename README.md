@@ -5,7 +5,7 @@ Safe Kick의 STM32F411RE 펌웨어 프로젝트다. STM32는 MQ-3 알코올 센�
 ## 주요 기능
 
 - MQ-3 baseline 3.5초 부저 안내와 버튼 입력 후 실측 8회 분리
-- HX711 4채널 무게 측정 및 1초 주기 스트림
+- HX711 4채널 무게 측정, 앞뒤 하중 기반 PWM 제어 및 1초 주기 스트림
 - UART 명령 수신과 키보드 입력 echo
 - 릴레이 잠금 및 잠금 해제 제어
 - 무게 측정과 동시에 동작하는 비차단 부저 경고
@@ -67,9 +67,9 @@ USART2는 `115200-8-N-1`, flow control 없음으로 사용한다.
 | `STOP_TEST_MQ3` | `MQ3_STREAM_OFF` 출력 후 MQ-3 연속 측정 종료 |
 | `CHECK_WEIGHT` | `[CHECK_WEIGHT]` 출력 후 1초 주기 무게 스트림 시작 |
 | `STOP_WEIGHT` | `[END_WEIGHT]` 후 `WEIGHT_STREAM_OFF` 출력 |
-| `BUZZ_ON` | 부저 경고 시작, 모터를 30%까지 서서히 감속 |
-| `BUZZ_OFF` | 부저 경고 종료, 모터를 70%까지 서서히 복구 |
-| `UNLOCK` | 릴레이 ON, 모터를 0%에서 70%까지 서서히 가속 |
+| `BUZZ_ON` | 부저 경고 시작, 현재 출력을 올리지 않고 최대 30%로 제한 |
+| `BUZZ_OFF` | 부저 경고 종료, 30% 출력 제한 해제 |
+| `UNLOCK` | 릴레이 ON, 모터를 0%에서 최소 출력 20%까지 서서히 가속 |
 | `LOCK` | 모터 PWM 0%, 릴레이와 부저 OFF, 무게 스트림 종료 |
 | `MOTOR_STATE` | 현재 잠금 상태와 PWM 속도(%) 출력 |
 

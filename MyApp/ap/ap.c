@@ -35,6 +35,7 @@ static uint32_t rx_cmd_len = 0;
 static uint8_t rx_terminator_seen = 0;
 static uint8_t weight_stream_active = 0;
 static uint32_t weight_last_sample_time = 0;
+static uint32_t weight_last_control_time = 0;
 static uint8_t mq3_stream_active = 0;
 static uint32_t mq3_last_sample_time = 0;
 
@@ -52,6 +53,36 @@ static uint32_t mq3_operation_time = 0;
 
 #define WEIGHT_SAMPLE_COUNT       1U
 #define WEIGHT_STREAM_INTERVAL_MS 1000U
+#define WEIGHT_CONTROL_INTERVAL_MS 200U
+#define RIDER_BASELINE_DELAY_MS   5000U
+#define MINIMUM_RIDER_WEIGHT_KG   20.0f
+#define MAXIMUM_RIDER_WEIGHT_KG   100.0f
+#define NO_RIDER_WEIGHT_KG        1.0f
+#define TWO_PERSON_DELTA_KG       30.0f
+#define TWO_PERSON_CLEAR_DELTA_KG 20.0f
+#define BALANCE_THRESHOLD_RATIO   0.70f
+#define BALANCE_CONFIRM_SAMPLES   2U
+#define SPEED_ADJUST_STEP_PERCENT 5U
+#define SPEED_ADJUST_INTERVAL_MS  1000U
+
+typedef struct {
+    float fl;
+    float fr;
+    float rl;
+    float rr;
+    float total;
+} weight_reading_t;
+
+static weight_reading_t latest_weight;
+static uint8_t latest_weight_valid = 0U;
+static uint8_t rider_control_active = 0U;
+static uint8_t rider_baseline_ready = 0U;
+static uint8_t two_person_candidate = 0U;
+static uint8_t front_bias_samples = 0U;
+static uint8_t rear_bias_samples = 0U;
+static float rider_baseline_kg = 0.0f;
+static uint32_t rider_control_started_at = 0U;
+static uint32_t last_speed_adjust_time = 0U;
 /* baseline과 실제 측정은 각각 8회, 500ms 간격을 유지한다. */
 #define MQ3_BASELINE_SAMPLE_COUNT  8U
 #define MQ3_MEASURE_SAMPLE_COUNT   8U
@@ -97,18 +128,128 @@ static void trim_rx_cmd(char *cmd)
     }
 }
 
+static void read_weight(weight_reading_t *reading)
+{
+    reading->fl = HX711_GetKg(&hx1, WEIGHT_SAMPLE_COUNT);
+    reading->fr = HX711_GetKg(&hx2, WEIGHT_SAMPLE_COUNT);
+    reading->rl = HX711_GetKg(&hx3, WEIGHT_SAMPLE_COUNT);
+    reading->rr = HX711_GetKg(&hx4, WEIGHT_SAMPLE_COUNT);
+    reading->total = reading->fl + reading->fr + reading->rl + reading->rr;
+}
+
 static void send_weight_response(void)
 {
-    /* Raspberry Pi는 개별 하중과 네 채널 합계 TOTAL을 함께 사용한다. */
-    float fl = HX711_GetKg(&hx1, WEIGHT_SAMPLE_COUNT);
-    float fr = HX711_GetKg(&hx2, WEIGHT_SAMPLE_COUNT);
-    float rl = HX711_GetKg(&hx3, WEIGHT_SAMPLE_COUNT);
-    float rr = HX711_GetKg(&hx4, WEIGHT_SAMPLE_COUNT);
-    float total = fl + fr + rl + rr;
+    if (!latest_weight_valid) {
+        return;
+    }
 
     uartPrintf(0,
                "FL:%.2f FR:%.2f RL:%.2f RR:%.2f TOTAL:%.2f\r\n",
-               fl, fr, rl, rr, total);
+               latest_weight.fl,
+               latest_weight.fr,
+               latest_weight.rl,
+               latest_weight.rr,
+               latest_weight.total);
+}
+
+static void reset_balance_samples(void)
+{
+    front_bias_samples = 0U;
+    rear_bias_samples = 0U;
+}
+
+static void start_rider_control(uint32_t now)
+{
+    rider_control_active = 1U;
+    rider_baseline_ready = 0U;
+    two_person_candidate = 0U;
+    rider_baseline_kg = 0.0f;
+    rider_control_started_at = now;
+    last_speed_adjust_time = now;
+    reset_balance_samples();
+}
+
+static void stop_rider_control(void)
+{
+    rider_control_active = 0U;
+    rider_baseline_ready = 0U;
+    two_person_candidate = 0U;
+    rider_baseline_kg = 0.0f;
+    reset_balance_samples();
+}
+
+static void update_rider_control(uint32_t now, const weight_reading_t *reading)
+{
+    float front_weight;
+    float rear_weight;
+    float delta;
+
+    if (!rider_control_active || !motorControlIsUnlocked()) {
+        return;
+    }
+
+    if (reading->total < NO_RIDER_WEIGHT_KG) {
+        motorControlPause();
+        reset_balance_samples();
+        return;
+    }
+
+    if (!rider_baseline_ready) {
+        if ((now - rider_control_started_at) >= RIDER_BASELINE_DELAY_MS &&
+            reading->total >= MINIMUM_RIDER_WEIGHT_KG &&
+            reading->total <= MAXIMUM_RIDER_WEIGHT_KG) {
+            rider_baseline_kg = reading->total;
+            rider_baseline_ready = 1U;
+            last_speed_adjust_time = now;
+        }
+        return;
+    }
+
+    delta = reading->total - rider_baseline_kg;
+    if (two_person_candidate) {
+        if (delta <= TWO_PERSON_CLEAR_DELTA_KG) {
+            two_person_candidate = 0U;
+        } else {
+            reset_balance_samples();
+            return;
+        }
+    }
+    if (delta >= TWO_PERSON_DELTA_KG) {
+        two_person_candidate = 1U;
+        reset_balance_samples();
+        return;
+    }
+
+    if (reading->total < MINIMUM_RIDER_WEIGHT_KG) {
+        reset_balance_samples();
+        return;
+    }
+
+    front_weight = reading->fl + reading->fr;
+    rear_weight = reading->rl + reading->rr;
+    if (front_weight >= reading->total * BALANCE_THRESHOLD_RATIO) {
+        if (front_bias_samples < BALANCE_CONFIRM_SAMPLES) {
+            front_bias_samples++;
+        }
+        rear_bias_samples = 0U;
+        if (front_bias_samples >= BALANCE_CONFIRM_SAMPLES &&
+            (now - last_speed_adjust_time) >= SPEED_ADJUST_INTERVAL_MS) {
+            motorControlIncreaseSpeed(SPEED_ADJUST_STEP_PERCENT);
+            last_speed_adjust_time = now;
+        }
+    } else if (rear_weight >= reading->total * BALANCE_THRESHOLD_RATIO) {
+        if (rear_bias_samples < BALANCE_CONFIRM_SAMPLES) {
+            rear_bias_samples++;
+        }
+        front_bias_samples = 0U;
+        if (rear_bias_samples >= BALANCE_CONFIRM_SAMPLES &&
+            (now - last_speed_adjust_time) >= SPEED_ADJUST_INTERVAL_MS) {
+            motorControlDecreaseSpeed(SPEED_ADJUST_STEP_PERCENT);
+            last_speed_adjust_time = now;
+        }
+    } else {
+        reset_balance_samples();
+    }
 }
 
 static void start_weight_stream(void)
@@ -117,6 +258,8 @@ static void start_weight_stream(void)
     uartPrintf(0, "[CHECK_WEIGHT]\r\n");
     weight_stream_active = 1;
     weight_last_sample_time = HAL_GetTick();
+    weight_last_control_time = 0U;
+    latest_weight_valid = 0U;
 }
 
 static void stop_weight_stream(void)
@@ -286,6 +429,7 @@ static void process_command(const char *cmd)
         cancel_mq3_operation();
         buzzerStop();
         motorControlLock();
+        stop_rider_control();
         stop_weight_stream();
         uartPrintf(0, "LOCK_OK\r\n");
         return;
@@ -293,6 +437,7 @@ static void process_command(const char *cmd)
 
     if (strcmp(cmd, "UNLOCK") == 0) {
         motorControlUnlock();
+        start_rider_control(HAL_GetTick());
         uartPrintf(0, "UNLOCK_OK\r\n");
         return;
     }
@@ -350,6 +495,14 @@ void apMain(void)
         }
 
         if (weight_stream_active &&
+            (now - weight_last_control_time >= WEIGHT_CONTROL_INTERVAL_MS)) {
+            weight_last_control_time = now;
+            read_weight(&latest_weight);
+            latest_weight_valid = 1U;
+            update_rider_control(now, &latest_weight);
+        }
+
+        if (weight_stream_active && latest_weight_valid &&
             (now - weight_last_sample_time >= WEIGHT_STREAM_INTERVAL_MS)) {
             weight_last_sample_time = now;
             send_weight_response();

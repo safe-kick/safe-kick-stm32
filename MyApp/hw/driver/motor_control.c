@@ -5,7 +5,7 @@
 
 #define MOTOR_PWM_TIMER                htim1
 #define MOTOR_PWM_CHANNEL              TIM_CHANNEL_1
-#define MOTOR_MINIMUM_SPEED_PERCENT    20U
+#define MOTOR_MINIMUM_SPEED_PERCENT    30U
 #define MOTOR_MAXIMUM_SPEED_PERCENT    70U
 #define MOTOR_WARNING_SPEED_PERCENT    30U
 #define MOTOR_RAMP_STEP_PERCENT        1U
@@ -80,14 +80,14 @@ void motorControlUpdate(void)
 
 void motorControlUnlock(void)
 {
-    /* 방향과 릴레이를 준비하고 최소 주행 출력까지 부드럽게 올린다. */
+    /* 방향과 릴레이만 준비하며, 앞쪽 하중이 감지될 때까지 PWM은 0%로 유지한다. */
     if (!relayIsOn()) {
         motorWriteSpeed(0U);
         motorSetForward();
         relayOn();
     }
     warning_limited = false;
-    target_speed_percent = MOTOR_MINIMUM_SPEED_PERCENT;
+    target_speed_percent = 0U;
     last_ramp_time = HAL_GetTick();
 }
 

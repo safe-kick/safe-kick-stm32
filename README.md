@@ -69,7 +69,7 @@ USART2는 `115200-8-N-1`, flow control 없음으로 사용한다.
 | `STOP_WEIGHT` | `[END_WEIGHT]` 후 `WEIGHT_STREAM_OFF` 출력 |
 | `BUZZ_ON` | 부저 경고 시작, 현재 출력을 올리지 않고 최대 30%로 제한 |
 | `BUZZ_OFF` | 부저 경고 종료, 30% 출력 제한 해제 |
-| `UNLOCK` | 릴레이 ON, 모터를 0%에서 최소 출력 20%까지 서서히 가속 |
+| `UNLOCK` | 릴레이 ON, 모터 PWM은 0% 유지(앞쪽 하중 70% 감지 시 30%로 기동) |
 | `LOCK` | 모터 PWM 0%, 릴레이와 부저 OFF, 무게 스트림 종료 |
 | `MOTOR_STATE` | 현재 잠금 상태와 PWM 속도(%) 출력 |
 

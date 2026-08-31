@@ -115,8 +115,9 @@ COM/NO/NC 접점은 사용 중인 실제 모듈의 정격 및 시스템 전원 �
 - L298N 모듈에 ENA 점퍼가 있으면 외부 PWM을 사용하도록 점퍼 상태를 확인한다.
 - `UNLOCK` 직후에는 릴레이만 켜고 PWM 0%를 유지한다. 전방 하중 조건을 만족하면
   30%에서 시작해 30~70% 범위에서 제어한다.
-- 실제 출력은 50ms마다 1%씩 목표값을 따라가며, 앞·뒤 하중에 따른 목표값 변경은
-  최대 1초에 한 번 5%씩 수행한다. `BUZZ_ON` 중에는 목표 PWM을 최대 30%로 제한한다.
+- 최초 전방 하중 확정 시 PWM 30%를 즉시 적용한다. 이후 실제 출력은 25ms마다
+  1%씩 목표값을 따라가며, 앞·뒤 하중에 따른 목표값 변경은 최대 500ms에 한 번
+  5%씩 수행한다. `BUZZ_ON` 중에는 목표 PWM을 최대 30%로 제한한다.
 
 ### 전원 및 안전 주의사항
 
@@ -169,10 +170,10 @@ USART2는 `115200-8-N-1`, flow control 없음으로 사용한다.
 | `TEST_MQ3` | `MQ3_STREAM_ON` 출력 후 500ms 주기 MQ-3 연속 측정 시작 |
 | `STOP_TEST_MQ3` | `MQ3_STREAM_OFF` 출력 후 MQ-3 연속 측정 종료 |
 | `CHECK_WEIGHT` | `[CHECK_WEIGHT]` 출력 후 1초 주기 무게 스트림 시작 |
-| `STOP_WEIGHT` | `[END_WEIGHT]` 후 `WEIGHT_STREAM_OFF` 출력 |
+| `STOP_WEIGHT` | 운행 중이면 즉시 잠근 뒤 `[END_WEIGHT]`, `WEIGHT_STREAM_OFF` 출력 |
 | `BUZZ_ON` | 부저 경고 시작, 현재 출력을 올리지 않고 최대 30%로 제한 |
 | `BUZZ_OFF` | 부저 경고 종료, 30% 출력 제한 해제 |
-| `UNLOCK` | 릴레이 ON, 모터 PWM은 0% 유지(앞쪽 하중 70% 감지 시 30%로 기동) |
+| `UNLOCK` | 무게 제어 자동 시작, 릴레이 ON, PWM 0% 유지(앞쪽 하중 70% 감지 시 30%로 기동) |
 | `LOCK` | 모터 PWM 0%, 릴레이와 부저 OFF, 무게 스트림 종료 |
 | `MOTOR_STATE` | 현재 잠금 상태와 PWM 속도(%) 출력 |
 
@@ -182,3 +183,17 @@ USART2는 `115200-8-N-1`, flow control 없음으로 사용한다.
 
 - STM32: 센서 측정, UART 전송, 릴레이·부저·모터 PWM 제어
 - Raspberry Pi: MQ-3 판정, 탑승 인원 판단, 앱 연동 및 STM32 명령 전송
+
+## 빌드
+
+STM32Cube가 설치한 CMake, Ninja, ARM GCC가 일반 터미널의 `PATH`에 없어도
+macOS에서는 빌드 스크립트가 Cube 번들 경로를 자동으로 찾는다.
+
+```bash
+./scripts/build.sh          # Debug
+./scripts/build.sh Release
+```
+
+빌드 결과는 각각 `build/Debug/safe-kick.elf`와
+`build/Release/safe-kick.elf`에 생성된다. 다른 환경에서는 `cmake`, `ninja`,
+`arm-none-eabi-gcc`를 `PATH`에 추가한 뒤 같은 스크립트를 실행한다.

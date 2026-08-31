@@ -9,7 +9,7 @@
 #define MOTOR_MAXIMUM_SPEED_PERCENT    70U
 #define MOTOR_WARNING_SPEED_PERCENT    30U
 #define MOTOR_RAMP_STEP_PERCENT        1U
-#define MOTOR_RAMP_INTERVAL_MS         50U
+#define MOTOR_RAMP_INTERVAL_MS         25U
 
 /* current는 실제 PWM, target은 update()가 따라갈 목표 PWM이다. */
 static uint8_t current_speed_percent = 0;
@@ -68,7 +68,7 @@ void motorControlUpdate(void)
     }
     last_ramp_time = now;
 
-    /* delay를 사용하지 않고 50ms마다 1%만 변경해 다른 센서 처리를 유지한다. */
+    /* delay를 사용하지 않고 25ms마다 1%만 변경해 다른 센서 처리를 유지한다. */
     if (current_speed_percent < target_speed_percent) {
         uint8_t next = current_speed_percent + MOTOR_RAMP_STEP_PERCENT;
         motorWriteSpeed(next > target_speed_percent ? target_speed_percent : next);
@@ -118,6 +118,8 @@ void motorControlIncreaseSpeed(uint8_t step_percent)
 
     if (target_speed_percent == 0U) {
         target_speed_percent = MOTOR_MINIMUM_SPEED_PERCENT;
+        /* 최초 전방 하중 확정 시에는 기동 PWM 30%를 즉시 적용한다. */
+        motorWriteSpeed(MOTOR_MINIMUM_SPEED_PERCENT);
         return;
     }
 

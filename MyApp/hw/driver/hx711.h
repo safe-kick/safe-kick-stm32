@@ -1,6 +1,8 @@
 #pragma once
 #include "main.h"
 
+#include <stdbool.h>
+
 typedef struct
 {
     /* HX711 1채널의 data/clock 핀과 설치별 보정값. */
@@ -14,11 +16,17 @@ typedef struct
     float scale;    /* kg 변환용 raw-counts/kg 보정계수 */
 } HX711_t;
 
-int32_t HX711_Read(HX711_t *hx);
-
-int32_t HX711_ReadAverage(HX711_t *hx, uint8_t times);
-
-void HX711_Tare(HX711_t *hx, uint8_t times);
-
-int32_t HX711_GetValue(HX711_t *hx, uint8_t times);
-float HX711_GetKg(HX711_t *hx, uint8_t times);
+bool HX711_Read(HX711_t *hx, uint32_t timeout_ms, int32_t *value);
+bool HX711_ReadAverage(HX711_t *hx,
+                       uint8_t times,
+                       uint32_t timeout_ms,
+                       int32_t *average);
+bool HX711_Tare(HX711_t *hx, uint8_t times, uint32_t timeout_ms);
+bool HX711_GetValue(HX711_t *hx,
+                    uint8_t times,
+                    uint32_t timeout_ms,
+                    int32_t *value);
+bool HX711_GetKg(HX711_t *hx,
+                 uint8_t times,
+                 uint32_t timeout_ms,
+                 float *kg);

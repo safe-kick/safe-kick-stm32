@@ -52,18 +52,19 @@ static uint32_t mq3_sample_sum = 0;
 static uint32_t mq3_operation_time = 0;
 
 #define WEIGHT_SAMPLE_COUNT       1U
+#define HX711_RUNTIME_TIMEOUT_MS  200U
+#define HX711_STARTUP_TIMEOUT_MS  1000U
 #define WEIGHT_STREAM_INTERVAL_MS 1000U
 #define WEIGHT_CONTROL_INTERVAL_MS 200U
 #define RIDER_BASELINE_DELAY_MS   5000U
 #define MINIMUM_RIDER_WEIGHT_KG   20.0f
 #define MAXIMUM_RIDER_WEIGHT_KG   100.0f
-#define NO_RIDER_WEIGHT_KG        1.0f
 #define TWO_PERSON_DELTA_KG       30.0f
 #define TWO_PERSON_CLEAR_DELTA_KG 20.0f
 #define BALANCE_THRESHOLD_RATIO   0.70f
 #define BALANCE_CONFIRM_SAMPLES   2U
 #define SPEED_ADJUST_STEP_PERCENT 5U
-#define SPEED_ADJUST_INTERVAL_MS  1000U
+#define SPEED_ADJUST_INTERVAL_MS  500U
 
 typedef struct {
     float fl;
@@ -75,6 +76,8 @@ typedef struct {
 
 static weight_reading_t latest_weight;
 static uint8_t latest_weight_valid = 0U;
+static uint8_t load_cells_ready = 0U;
+static uint8_t weight_sensor_fault = 0U;
 static uint8_t rider_control_active = 0U;
 static uint8_t rider_baseline_ready = 0U;
 static uint8_t two_person_candidate = 0U;
@@ -128,13 +131,29 @@ static void trim_rx_cmd(char *cmd)
     }
 }
 
-static void read_weight(weight_reading_t *reading)
+static bool read_weight(weight_reading_t *reading)
 {
-    reading->fl = HX711_GetKg(&hx1, WEIGHT_SAMPLE_COUNT);
-    reading->fr = HX711_GetKg(&hx2, WEIGHT_SAMPLE_COUNT);
-    reading->rl = HX711_GetKg(&hx3, WEIGHT_SAMPLE_COUNT);
-    reading->rr = HX711_GetKg(&hx4, WEIGHT_SAMPLE_COUNT);
+    if (!HX711_GetKg(&hx1,
+                     WEIGHT_SAMPLE_COUNT,
+                     HX711_RUNTIME_TIMEOUT_MS,
+                     &reading->fl) ||
+        !HX711_GetKg(&hx2,
+                     WEIGHT_SAMPLE_COUNT,
+                     HX711_RUNTIME_TIMEOUT_MS,
+                     &reading->fr) ||
+        !HX711_GetKg(&hx3,
+                     WEIGHT_SAMPLE_COUNT,
+                     HX711_RUNTIME_TIMEOUT_MS,
+                     &reading->rl) ||
+        !HX711_GetKg(&hx4,
+                     WEIGHT_SAMPLE_COUNT,
+                     HX711_RUNTIME_TIMEOUT_MS,
+                     &reading->rr)) {
+        return false;
+    }
+
     reading->total = reading->fl + reading->fr + reading->rl + reading->rr;
+    return true;
 }
 
 static void send_weight_response(void)
@@ -178,6 +197,20 @@ static void stop_rider_control(void)
     reset_balance_samples();
 }
 
+static void handle_weight_sensor_fault(void)
+{
+    latest_weight_valid = 0U;
+    load_cells_ready = 0U;
+    weight_stream_active = 0U;
+    motorControlLock();
+    stop_rider_control();
+
+    if (!weight_sensor_fault) {
+        weight_sensor_fault = 1U;
+        uartPrintf(0, "FAULT:WEIGHT_SENSOR_TIMEOUT\r\n");
+    }
+}
+
 static void update_rider_control(uint32_t now, const weight_reading_t *reading)
 {
     float front_weight;
@@ -188,7 +221,8 @@ static void update_rider_control(uint32_t now, const weight_reading_t *reading)
         return;
     }
 
-    if (reading->total < NO_RIDER_WEIGHT_KG) {
+    /* 발을 일부만 걸친 상태도 무인 상태와 동일하게 즉시 PWM을 제거한다. */
+    if (reading->total < MINIMUM_RIDER_WEIGHT_KG) {
         motorControlPause();
         reset_balance_samples();
         return;
@@ -216,11 +250,6 @@ static void update_rider_control(uint32_t now, const weight_reading_t *reading)
     }
     if (delta >= TWO_PERSON_DELTA_KG) {
         two_person_candidate = 1U;
-        reset_balance_samples();
-        return;
-    }
-
-    if (reading->total < MINIMUM_RIDER_WEIGHT_KG) {
         reset_balance_samples();
         return;
     }
@@ -254,6 +283,10 @@ static void update_rider_control(uint32_t now, const weight_reading_t *reading)
 
 static void start_weight_stream(void)
 {
+    if (weight_stream_active) {
+        return;
+    }
+
     /* 첫 샘플은 다음 1초 주기에 보내 탑승자가 자세를 잡을 시간을 준다. */
     uartPrintf(0, "[CHECK_WEIGHT]\r\n");
     weight_stream_active = 1;
@@ -419,6 +452,12 @@ static void process_command(const char *cmd)
     }
 
     if (strcmp(cmd, "STOP_WEIGHT") == 0) {
+        /* 제어 입력을 끈 채 마지막 PWM으로 계속 주행하지 못하게 함께 잠근다. */
+        if (motorControlIsUnlocked()) {
+            motorControlLock();
+            stop_rider_control();
+            uartPrintf(0, "LOCK_OK\r\n");
+        }
         stop_weight_stream();
         uartPrintf(0, "WEIGHT_STREAM_OFF\r\n");
         return;
@@ -436,6 +475,14 @@ static void process_command(const char *cmd)
     }
 
     if (strcmp(cmd, "UNLOCK") == 0) {
+        if (!load_cells_ready) {
+            motorControlLock();
+            uartPrintf(0, "ERR:WEIGHT_SENSOR_NOT_READY\r\n");
+            return;
+        }
+
+        /* 하중 기반 제어가 빠진 채 릴레이만 켜지는 상태를 허용하지 않는다. */
+        start_weight_stream();
         motorControlUnlock();
         start_rider_control(HAL_GetTick());
         uartPrintf(0, "UNLOCK_OK\r\n");
@@ -475,10 +522,15 @@ void apMain(void)
     buzzerInit();
     uartPrintf(0, "Tare...\r\n");
     /* 이 구간에 하중이 있으면 해당 무게가 영점으로 저장된다. */
-    HX711_Tare(&hx1, 10);
-    HX711_Tare(&hx2, 10);
-    HX711_Tare(&hx3, 10);
-    HX711_Tare(&hx4, 10);
+    load_cells_ready =
+        HX711_Tare(&hx1, 10, HX711_STARTUP_TIMEOUT_MS) &&
+        HX711_Tare(&hx2, 10, HX711_STARTUP_TIMEOUT_MS) &&
+        HX711_Tare(&hx3, 10, HX711_STARTUP_TIMEOUT_MS) &&
+        HX711_Tare(&hx4, 10, HX711_STARTUP_TIMEOUT_MS);
+    if (!load_cells_ready) {
+        weight_sensor_fault = 1U;
+        uartPrintf(0, "FAULT:WEIGHT_SENSOR_TIMEOUT\r\n");
+    }
     uartPrintf(0, "READY\r\n");
 
     while (1) {
@@ -497,9 +549,12 @@ void apMain(void)
         if (weight_stream_active &&
             (now - weight_last_control_time >= WEIGHT_CONTROL_INTERVAL_MS)) {
             weight_last_control_time = now;
-            read_weight(&latest_weight);
-            latest_weight_valid = 1U;
-            update_rider_control(now, &latest_weight);
+            if (!read_weight(&latest_weight)) {
+                handle_weight_sensor_fault();
+            } else {
+                latest_weight_valid = 1U;
+                update_rider_control(now, &latest_weight);
+            }
         }
 
         if (weight_stream_active && latest_weight_valid &&

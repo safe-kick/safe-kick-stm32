@@ -14,12 +14,19 @@ static void HX711_Delay(void)
     for(volatile int i = 0; i < 10; i++);
 }
 
-int32_t HX711_Read(HX711_t *hx)
+bool HX711_Read(HX711_t *hx, uint32_t timeout_ms, int32_t *value)
 {
     uint32_t data = 0;
+    uint32_t started_at = HAL_GetTick();
 
-    /* DT가 LOW가 되면 24-bit 변환 결과를 읽을 수 있다. 현재 timeout은 없다. */
-    while(HAL_GPIO_ReadPin(hx->DT_Port, hx->DT_Pin));
+    /* DT가 LOW가 되지 않으면 메인 루프를 영구 정지시키지 않고 실패를 반환한다. */
+    while(HAL_GPIO_ReadPin(hx->DT_Port, hx->DT_Pin))
+    {
+        if ((HAL_GetTick() - started_at) >= timeout_ms)
+        {
+            return false;
+        }
+    }
 
     for(int i = 0; i < 24; i++)
     {
@@ -63,39 +70,82 @@ int32_t HX711_Read(HX711_t *hx)
         data |= 0xFF000000;
     }
 
-    return (int32_t)data;
+    *value = (int32_t)data;
+    return true;
 }
 
-int32_t HX711_ReadAverage(HX711_t *hx,
-                          uint8_t times)
+bool HX711_ReadAverage(HX711_t *hx,
+                       uint8_t times,
+                       uint32_t timeout_ms,
+                       int32_t *average)
 {
     int64_t sum = 0;
+    int32_t sample;
+
+    if (times == 0U)
+    {
+        return false;
+    }
 
     for(int i = 0; i < times; i++)
     {
-        sum += HX711_Read(hx);
+        if (!HX711_Read(hx, timeout_ms, &sample))
+        {
+            return false;
+        }
+        sum += sample;
     }
 
-    return (int32_t)(sum / times);
+    *average = (int32_t)(sum / times);
+    return true;
 }
 
-void HX711_Tare(HX711_t *hx,
-                uint8_t times)
+bool HX711_Tare(HX711_t *hx,
+                uint8_t times,
+                uint32_t timeout_ms)
 {
+    int32_t average;
+
     /* 현재 무부하 평균을 이후 모든 측정에서 뺄 영점값으로 저장한다. */
-    hx->offset =
-        HX711_ReadAverage(hx, times);
+    if (!HX711_ReadAverage(hx, times, timeout_ms, &average))
+    {
+        return false;
+    }
+
+    hx->offset = average;
+    return true;
 }
 
-int32_t HX711_GetValue(HX711_t *hx,
-                       uint8_t times)
+bool HX711_GetValue(HX711_t *hx,
+                    uint8_t times,
+                    uint32_t timeout_ms,
+                    int32_t *value)
 {
-    return HX711_ReadAverage(hx, times)
-           - hx->offset;
+    int32_t average;
+
+    if (!HX711_ReadAverage(hx, times, timeout_ms, &average))
+    {
+        return false;
+    }
+
+    *value = average - hx->offset;
+    return true;
 }
 
-float HX711_GetKg(HX711_t *hx, uint8_t times)
+bool HX711_GetKg(HX711_t *hx,
+                 uint8_t times,
+                 uint32_t timeout_ms,
+                 float *kg)
 {
+    int32_t value;
+
+    if (hx->scale == 0.0f ||
+        !HX711_GetValue(hx, times, timeout_ms, &value))
+    {
+        return false;
+    }
+
     /* scale은 설치 상태에 따라 채널별로 보정한 raw-counts/kg 값이다. */
-    return (float)HX711_GetValue(hx, times) / hx->scale;
+    *kg = (float)value / hx->scale;
+    return true;
 }
